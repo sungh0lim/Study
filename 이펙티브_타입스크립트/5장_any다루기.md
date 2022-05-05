@@ -432,3 +432,122 @@ interface MonkeyDocument extends Document {
 
 (document as MonkeyDocument).monkey = "Macaque";
 ```
+
+## 아이템44. 타입 커버리지를 추적하여 타입 안정성 유지하기
+
+`noImplicitAny` 를 설정하고 모든 암시적 `any` 대신 명시적 타입 구문을 추가해도 `any` 타입과 관련된 문제들로부터 안전할 수 없습니다.
+
+`any` 타입이 여전히 프로그램 내에 존재할 수 있는 두 가지 경우가 있습니다.
+
+1. 명시적 `any` 타입
+   1. 열심히 `any` 보다 구체적으로 좁히려하지만, `any` 가 포함되어 있을 수 있음. (ex. `any[]`)
+2. 서드파티 타입 선언
+   1. `@types` 선언 파일로부터 `any` 타입이 전파되는 경우
+
+### type-coverage
+
+`any` 의 개수를 추적하는 것이 좋다.
+
+```bash
+$ npx type-coverage
+
+Need to install the following packages:
+  type-coverage
+Ok to proceed? (y) y
+35574 / 41052 86.65%
+type-coverage success.
+
+$ npx type-coverage --detail
+
+.../useConfirmModal.test.tsx:16:48: onCancel
+.../useConfirmModal.test.tsx:18:9: props
+.../useConfirmModal.test.tsx:18:15: onCancel
+35574 / 41052 86.65%
+type-coverage success.
+```
+
+6천개 가량의 `any` 를 고쳐야겠구나...?!
+
+### 코드에 any가 남아있는 경우
+
+1. 오류를 간단히 해결하기 위해 `any` 사용
+   1. ex. api response 가 아직 정해지지 않은 경우
+2. 타입을 제대로 작성하지 못했을 경우
+
+### 예시1
+
+```tsx
+const utils = {
+  buildColumnInfo(s: any, name: string): any {},
+};
+
+declare let appState: { dataSchema: unknown };
+
+function getColumnInfo(name: string): any {
+  return utils.buildColumnInfo(appState.dataSchema, name); // Returns any
+}
+```
+
+`any` 타입을 좁히기 위해서 `buildColumnInfo` 의 `return` 타입을 수정함 (`any` → `ColumnInfo`)
+
+```tsx
+type ColumnInfo = "ColumnInfo";
+
+const utils = {
+  buildColumnInfo(s: any, name: string): ColumnInfo {
+    return "ColumnInfo";
+  },
+};
+
+declare let appState: { dataSchema: unknown };
+
+function getColumnInfo(name: string): any {
+  return utils.buildColumnInfo(appState.dataSchema, name); // Returns any
+}
+```
+
+수정했다고 하더라도 `getColumnInfo` 의 반환타입이 여전히 `any` 이기때문에 `any` 가 남아있음
+
+![https://i.imgur.com/Qo7NIJs.png](https://i.imgur.com/Qo7NIJs.png)
+
+내용의 요지와는 다르지만 `ReturnType` 을 사용하면 방지할 수 있겠구나!
+
+```tsx
+type ColumnInfo = "ColumnInfo";
+
+const utils = {
+  buildColumnInfo(s: any, name: string): ColumnInfo {
+    return "ColumnInfo";
+  },
+};
+declare let appState: { dataSchema: unknown };
+function getColumnInfo(name: string): ReturnType<typeof utils.buildColumnInfo> {
+  return utils.buildColumnInfo(appState.dataSchema, name); // Returns any
+}
+
+const columnInfo = getColumnInfo("example");
+```
+
+![https://i.imgur.com/mz4Qh6G.png](https://i.imgur.com/mz4Qh6G.png)
+
+### 예시2
+
+가장 극단적인 예는 전체 모듈에 `any` 타입을 부여하는 것입니다.
+
+`type.d.ts` 파일에 `declare module 'my-module;` 을 선언하면 어떤 것이든 오류 없이 임포트할 수 있음
+
+```tsx
+import { blahblahFunction } from "my-module";
+
+blahblahFunction("a");
+```
+
+(정의도 안했는데 오류가 나지 않음)
+
+### 예시3
+
+서드파트 라이브러리에 타입 버그가 있는 경우
+
+이는 라이브러리가 업데이트되며 고쳐질 가능성이 있으므로 추적하고 있다가 `any` 를 제거해야함.
+
+또는 직접 라이브러리를 수정하고 커뮤니티에 공개할 수도 있음.
