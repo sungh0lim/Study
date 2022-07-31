@@ -25,5 +25,5 @@ class A {
 let initVal = A.initValue; // 1
 
 let person: object = { name: "Jack", age: 32 };
-person.name;
+// person.name;
 (<{ name: string }>person).name;
